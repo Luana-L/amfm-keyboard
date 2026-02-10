@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset="utf-8">
+  <title>Mini Web Synth</title>
+  <style>
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      background: #0f1220;
+      color: white;
+      margin: 0;
+      height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+    }
+
+    .app {
+      position: relative;
+      z-index: 2;
+      background: rgba(255, 255, 255, 0.08);
+      padding: 20px 150px;
+      border-radius: 14px;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+      text-align: center;
+    }
+
+    h1 {
+      margin: 0 0 10px 0;
+      font-weight: 600;
+    }
+
+    button {
+      background: #6c7cff;
+      border: none;
+      color: white;
+      padding: 8px 14px;
+      border-radius: 8px;
+      font-size: 14px;
+      cursor: pointer;
+      margin-bottom: 8px;
+    }
+
+    #waveform-type {
+      margin: 6px 0 12px 0;
+      opacity: 0.9;
+    }
+
+    .keyboard {
+      position: relative;
+      margin: 20px auto;
+      display: inline-block;
+      padding: 20px 10px 10px;
+      background: linear-gradient(to bottom, rgba(42, 42, 42, 0.2), rgba(26, 26, 26, 0.2));
+      border-radius: 8px;
+      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5);
+      text-align: center;
+      backdrop-filter: blur(15px);
+    }
+
+    .octave {
+      position: relative;
+      display: block;
+      margin: 5px auto;
+    }
+
+    .octave:first-child {
+      margin-bottom: 15px;
+    }
+
+    .key {
+      cursor: pointer;
+      user-select: none;
+      display: flex;
+      align-items: flex-end;
+      justify-content: center;
+      font-weight: 600;
+      box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+      transition: transform 0.05s ease, box-shadow 0.05s ease;
+    }
+
+    .key.white {
+      width: 50px;
+      height: 180px;
+      background: linear-gradient(to bottom, rgba(254, 254, 254, 0.45) 0%, rgba(245, 245, 245, 0.45) 100%);
+      border: 1px solid rgba(204, 204, 204, 0.3);
+      border-radius: 0 0 5px 5px;
+      color: #cccccc;
+      font-size: 14px;
+      padding-bottom: 10px;
+      display: inline-flex;
+      position: relative;
+      z-index: 1;
+      align-items: flex-end;
+      justify-content: center;
+      backdrop-filter: blur(3px);
+    }
+
+    .key.white:hover {
+      background: linear-gradient(to bottom, rgba(248, 248, 248, 0.6) 0%, rgba(239, 239, 239, 0.6) 100%);
+    }
+
+    .key.white.active {
+      background: linear-gradient(to bottom, rgba(208, 216, 255, 0.6) 0%, rgba(184, 197, 255, 0.6) 100%);
+      color: #ffffff;
+      transform: translateY(2px);
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+    }
+
+    .key.black {
+      width: 30px;
+      height: 110px;
+      background: linear-gradient(to bottom, rgba(51, 51, 51, 0.65) 0%, rgba(17, 17, 17, 0.65) 100%);
+      color: #ccc;
+      font-size: 11px;
+      padding-bottom: 8px;
+      position: absolute;
+      z-index: 2;
+      top: 0;
+      backdrop-filter: blur(3px);
+    }
+
+    .key.black:hover {
+      background: linear-gradient(to bottom, rgba(68, 68, 68, 0.7) 0%, rgba(34, 34, 34, 0.7) 100%);
+    }
+
+    .key.black.active {
+      background: linear-gradient(to bottom, rgba(108, 124, 255, 0.7) 0%, rgba(74, 92, 221, 0.7) 100%);
+      color: white;
+      transform: translateY(2px);
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+    }
+
+    /* Background reactive circle */
+    .viz {
+      position: absolute;
+      width: 3000px;
+      height: 3000px;
+      border-radius: 50%;
+      filter: blur(40px);
+      opacity: 0;
+      transition: opacity 0.2s ease, width 0.3s ease, height 0.3s ease;
+      z-index: 1;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="viz" id="viz"></div>
+
+  <div class="app">
+    <h1>🎹 Mini Web Synth</h1>
+    <div>
+      <label for="waveform-select">Waveform:</label>
+      <select id="waveform-select">
+        <option value="sine">Sine</option>
+        <option value="square">Square</option>
+        <option value="sawtooth">Sawtooth</option>
+        <option value="triangle">Triangle</option>
+      </select>
+    </div>
+
+    <div class="keyboard" id="keyboard"></div>
+    <p style="opacity:0.7; font-size:13px; margin-top:10px;">
+      Click keys or use keyboard to play notes
+    </p>
+  </div>
+
+  <script src="main.js"></script>
+</body>
+
+</html>
