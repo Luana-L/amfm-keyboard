@@ -28,74 +28,202 @@ document.addEventListener("DOMContentLoaded", function () {
                 '85': 987.766602512248223   // U - B
         };
 
-        const activeOscillators = {};
-        const activeGainNodes = {};
+        // ─── Voice Storage ───
+        const activeVoices = {};
 
-        const globalGain = audioCtx.createGain();
-        globalGain.gain.setValueAtTime(0.8, audioCtx.currentTime);
-        globalGain.connect(audioCtx.destination);
-
-        let waveformType = 'sine';
+        // ─── Synth Parameters ───
+        const synthParams = {
+                mode: 'additive',
+                waveform: 'sine',
+                // Additive
+                additivePartials: 5,
+                // AM
+                amModFreq: 100,
+                amDepth: 0.5,
+                // FM
+                fmModFreq: 200,
+                fmModIndex: 2,
+                // ADSR
+                attack: 0.05,
+                decay: 0.2,
+                sustain: 0.3,
+                release: 0.15,
+                // LFO
+                lfoRate: 5,
+                lfoDepth: 0,
+        };
 
         const MAX_VOICES = 8;
         const VOICE_GAIN = 1 / MAX_VOICES;
 
+        // ─── Audio Routing ───
+        const masterGain = audioCtx.createGain();
+        masterGain.gain.setValueAtTime(0.7, audioCtx.currentTime);
+        masterGain.connect(audioCtx.destination);
+
+        // ─── Global LFO ───
+        const lfo = audioCtx.createOscillator();
+        lfo.frequency.setValueAtTime(synthParams.lfoRate, audioCtx.currentTime);
+        lfo.start();
+
+        // ─── Play Note ───
         function playNote(key) {
                 if (!keyboardFrequencyMap[key]) return;
-                if (activeOscillators[key]) return;
+                if (activeVoices[key]) return;
 
-                const osc = audioCtx.createOscillator();
-                const gainNode = audioCtx.createGain();
+                const freq = keyboardFrequencyMap[key];
                 const now = audioCtx.currentTime;
 
-                osc.type = waveformType;
-                osc.frequency.setValueAtTime(keyboardFrequencyMap[key], now);
+                // Per-voice envelope gain
+                const envGain = audioCtx.createGain();
+                envGain.connect(masterGain);
 
-                osc.connect(gainNode);
-                gainNode.connect(globalGain);
-
-                const attack = 0.05;
-                const decay = 0.2;
-                const sustain = 0.3;
-
-                gainNode.gain.cancelScheduledValues(now);
-                gainNode.gain.setValueAtTime(0.0001, now);
-                gainNode.gain.exponentialRampToValueAtTime(VOICE_GAIN, now + attack);
-                gainNode.gain.exponentialRampToValueAtTime(
-                        VOICE_GAIN * sustain,
-                        now + attack + decay
+                // ADSR: Attack → Decay → Sustain
+                const targetGain = VOICE_GAIN;
+                envGain.gain.setValueAtTime(0.0001, now);
+                envGain.gain.exponentialRampToValueAtTime(targetGain, now + synthParams.attack);
+                envGain.gain.exponentialRampToValueAtTime(
+                        Math.max(targetGain * synthParams.sustain, 0.0001),
+                        now + synthParams.attack + synthParams.decay
                 );
 
-                osc.start(now);
+                let oscillators = [];
+                let extraNodes = [];
 
-                activeOscillators[key] = osc;
-                activeGainNodes[key] = gainNode;
+                switch (synthParams.mode) {
+                        case 'additive': {
+                                for (let i = 1; i <= synthParams.additivePartials; i++) {
+                                        const osc = audioCtx.createOscillator();
+                                        osc.type = synthParams.waveform;
+                                        osc.frequency.setValueAtTime(freq * i, now);
 
+                                        const partialGain = audioCtx.createGain();
+                                        partialGain.gain.setValueAtTime(1 / (i * i), now);
+
+                                        osc.connect(partialGain);
+                                        partialGain.connect(envGain);
+                                        osc.start(now);
+
+                                        oscillators.push(osc);
+                                        extraNodes.push(partialGain);
+                                }
+                                break;
+                        }
+
+                        case 'am': {
+                                // Carrier → amNode → envGain
+                                // Modulator → depthNode → amNode.gain
+                                // amNode.gain = 1 + depth * modulator (-1..1)
+                                const carrier = audioCtx.createOscillator();
+                                carrier.type = synthParams.waveform;
+                                carrier.frequency.setValueAtTime(freq, now);
+
+                                const amNode = audioCtx.createGain();
+                                amNode.gain.setValueAtTime(1.0, now);
+
+                                const modulator = audioCtx.createOscillator();
+                                modulator.type = 'sine';
+                                modulator.frequency.setValueAtTime(synthParams.amModFreq, now);
+
+                                const depthNode = audioCtx.createGain();
+                                depthNode.gain.setValueAtTime(synthParams.amDepth, now);
+
+                                modulator.connect(depthNode);
+                                depthNode.connect(amNode.gain);
+
+                                carrier.connect(amNode);
+                                amNode.connect(envGain);
+
+                                carrier.start(now);
+                                modulator.start(now);
+
+                                oscillators.push(carrier, modulator);
+                                extraNodes.push(amNode, depthNode);
+                                break;
+                        }
+
+                        case 'fm': {
+                                // Modulator → modGainNode → carrier.frequency
+                                // carrier.frequency = freq + modIndex * modFreq * sin(2π * modFreq * t)
+                                const carrier = audioCtx.createOscillator();
+                                carrier.type = synthParams.waveform;
+                                carrier.frequency.setValueAtTime(freq, now);
+
+                                const modulator = audioCtx.createOscillator();
+                                modulator.type = 'sine';
+                                modulator.frequency.setValueAtTime(synthParams.fmModFreq, now);
+
+                                const modGainNode = audioCtx.createGain();
+                                modGainNode.gain.setValueAtTime(
+                                        synthParams.fmModIndex * synthParams.fmModFreq,
+                                        now
+                                );
+
+                                modulator.connect(modGainNode);
+                                modGainNode.connect(carrier.frequency);
+
+                                carrier.connect(envGain);
+
+                                carrier.start(now);
+                                modulator.start(now);
+
+                                oscillators.push(carrier, modulator);
+                                extraNodes.push(modGainNode);
+                                break;
+                        }
+                }
+
+                // ─── Per-voice LFO (vibrato) ───
+                if (synthParams.lfoDepth > 0) {
+                        const lfoGain = audioCtx.createGain();
+                        lfoGain.gain.setValueAtTime(synthParams.lfoDepth * freq * 0.03, now);
+                        lfo.connect(lfoGain);
+                        if (synthParams.mode === 'additive') {
+                                oscillators.forEach(osc => lfoGain.connect(osc.frequency));
+                        } else {
+                                lfoGain.connect(oscillators[0].frequency);
+                        }
+                        extraNodes.push(lfoGain);
+                }
+
+                activeVoices[key] = { oscillators, envGain, extraNodes };
                 updateViz();
         }
 
+        // ─── Stop Voice ───
         function stopVoice(key, immediate = false) {
-                const osc = activeOscillators[key];
-                const gainNode = activeGainNodes[key];
-                if (!osc || !gainNode) return;
+                const voice = activeVoices[key];
+                if (!voice) return;
 
                 const now = audioCtx.currentTime;
-                const release = immediate ? 0.02 : 0.15;
+                const release = immediate ? 0.02 : synthParams.release;
 
-                gainNode.gain.cancelScheduledValues(now);
-                gainNode.gain.setValueAtTime(gainNode.gain.value, now);
-                gainNode.gain.setTargetAtTime(0.0001, now, release);
+                voice.envGain.gain.cancelScheduledValues(now);
+                voice.envGain.gain.setValueAtTime(voice.envGain.gain.value, now);
+                voice.envGain.gain.setTargetAtTime(0.0001, now, release / 3);
 
-                osc.stop(now + release * 6);
+                const stopTime = now + release * 5;
+                voice.oscillators.forEach(osc => {
+                        try { osc.stop(stopTime); } catch (e) { /* already stopped */ }
+                });
 
-                delete activeOscillators[key];
-                delete activeGainNodes[key];
+                // Clean up nodes after release finishes
+                const cleanupDelay = (release * 5 + 0.2) * 1000;
+                const nodes = voice.extraNodes;
+                const env = voice.envGain;
+                setTimeout(() => {
+                        try { env.disconnect(); } catch (e) { }
+                        nodes.forEach(n => { try { n.disconnect(); } catch (e) { } });
+                }, cleanupDelay);
 
+                delete activeVoices[key];
                 updateViz();
         }
 
-        // Keyboard input
+        // ─── Keyboard Events ───
         window.addEventListener("keydown", (e) => {
+                if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+                if (e.repeat) return;
                 const key = e.which.toString();
                 if (!keyboardFrequencyMap[key]) return;
                 playNote(key);
@@ -112,28 +240,17 @@ document.addEventListener("DOMContentLoaded", function () {
 
         // Release all on blur (prevents stuck notes)
         window.addEventListener("blur", () => {
-                for (const key in activeOscillators) {
+                for (const key in activeVoices) {
                         stopVoice(key, true);
                         const el = document.querySelector(`.key[data-key="${key}"]`);
                         if (el) el.classList.remove("active");
                 }
         });
 
-        // Waveform dropdown
-        const waveformSelect = document.getElementById("waveform-select");
-        if (waveformSelect) {
-                waveformType = waveformSelect.value;
-                waveformSelect.addEventListener("change", (e) => {
-                        waveformType = e.target.value;
-                });
-        }
-
-        // UI Keyboard
+        // ─── UI Keyboard Building ───
         const keyboardDiv = document.getElementById("keyboard");
         const viz = document.getElementById("viz");
 
-        // Define octaves with white keys and black keys
-        // Each octave: [white keys array, black keys array with positions]
         const octaves = [
                 {
                         // Upper octave (Q-U row)
@@ -147,11 +264,11 @@ document.addEventListener("DOMContentLoaded", function () {
                                 { code: '85', note: 'B', label: 'U' }
                         ],
                         black: [
-                                { code: '50', note: 'C#', label: '2', position: 35 },  // Between C-D
-                                { code: '51', note: 'D#', label: '3', position: 85 },  // Between D-E
-                                { code: '53', note: 'F#', label: '5', position: 185 }, // Between F-G
-                                { code: '54', note: 'G#', label: '6', position: 235 }, // Between G-A
-                                { code: '55', note: 'A#', label: '7', position: 285 }  // Between A-B
+                                { code: '50', note: 'C#', label: '2', position: 35 },
+                                { code: '51', note: 'D#', label: '3', position: 85 },
+                                { code: '53', note: 'F#', label: '5', position: 185 },
+                                { code: '54', note: 'G#', label: '6', position: 235 },
+                                { code: '55', note: 'A#', label: '7', position: 285 }
                         ]
                 },
                 {
@@ -166,22 +283,22 @@ document.addEventListener("DOMContentLoaded", function () {
                                 { code: '77', note: 'B', label: 'M' }
                         ],
                         black: [
-                                { code: '83', note: 'C#', label: 'S', position: 35 },  // Between C-D
-                                { code: '68', note: 'D#', label: 'D', position: 85 },  // Between D-E
-                                { code: '71', note: 'F#', label: 'G', position: 185 }, // Between F-G
-                                { code: '72', note: 'G#', label: 'H', position: 235 }, // Between G-A
-                                { code: '74', note: 'A#', label: 'J', position: 285 }  // Between A-B
+                                { code: '83', note: 'C#', label: 'S', position: 35 },
+                                { code: '68', note: 'D#', label: 'D', position: 85 },
+                                { code: '71', note: 'F#', label: 'G', position: 185 },
+                                { code: '72', note: 'G#', label: 'H', position: 235 },
+                                { code: '74', note: 'A#', label: 'J', position: 285 }
                         ]
                 }
         ];
 
-        function createKey(keyData, isBlack, position = null) {
+        function createKey(keyData, isBlack, position) {
                 const keyDiv = document.createElement("div");
                 keyDiv.className = isBlack ? "key black" : "key white";
                 keyDiv.textContent = keyData.label;
                 keyDiv.dataset.key = keyData.code;
 
-                if (isBlack && position !== null) {
+                if (isBlack && position !== undefined) {
                         keyDiv.style.left = position + 'px';
                 }
 
@@ -207,12 +324,10 @@ document.addEventListener("DOMContentLoaded", function () {
                 const octaveDiv = document.createElement("div");
                 octaveDiv.className = "octave";
 
-                // Add white keys
                 octave.white.forEach(keyData => {
                         octaveDiv.appendChild(createKey(keyData, false));
                 });
 
-                // Add black keys on top
                 octave.black.forEach(keyData => {
                         octaveDiv.appendChild(createKey(keyData, true, keyData.position));
                 });
@@ -220,6 +335,7 @@ document.addEventListener("DOMContentLoaded", function () {
                 keyboardDiv.appendChild(octaveDiv);
         });
 
+        // ─── Visualizer ───
         function freqToHue(freq) {
                 const minF = 260;
                 const maxF = 1000;
@@ -228,7 +344,7 @@ document.addEventListener("DOMContentLoaded", function () {
         }
 
         function updateViz() {
-                const keys = Object.keys(activeOscillators);
+                const keys = Object.keys(activeVoices);
                 const count = keys.length;
 
                 if (!viz) return;
@@ -255,4 +371,112 @@ document.addEventListener("DOMContentLoaded", function () {
                 viz.style.background = `radial-gradient(circle, hsla(${hue}, 80%, 60%, 1), transparent 70%)`;
                 viz.style.opacity = opacity;
         }
+
+        // ─── Control Panel Setup ───
+        function setupControls() {
+                // Synthesis mode radio buttons
+                document.querySelectorAll('input[name="synth-mode"]').forEach(radio => {
+                        radio.addEventListener('change', (e) => {
+                                synthParams.mode = e.target.value;
+                                updateControlVisibility();
+                        });
+                });
+
+                // Waveform
+                bindSelect('waveform-select', (val) => { synthParams.waveform = val; });
+
+                // Additive: partials
+                bindRange('partials', 'partials-val', (val) => {
+                        synthParams.additivePartials = parseInt(val);
+                }, (val) => val);
+
+                // AM controls
+                bindRange('am-freq', 'am-freq-val', (val) => {
+                        synthParams.amModFreq = parseFloat(val);
+                }, (val) => val + ' Hz');
+
+                bindRange('am-depth', 'am-depth-val', (val) => {
+                        synthParams.amDepth = parseFloat(val);
+                }, (val) => parseFloat(val).toFixed(2));
+
+                // FM controls
+                bindRange('fm-freq', 'fm-freq-val', (val) => {
+                        synthParams.fmModFreq = parseFloat(val);
+                }, (val) => val + ' Hz');
+
+                bindRange('fm-index', 'fm-index-val', (val) => {
+                        synthParams.fmModIndex = parseFloat(val);
+                }, (val) => parseFloat(val).toFixed(1));
+
+                // ADSR
+                bindRange('attack', 'attack-val', (val) => {
+                        synthParams.attack = parseFloat(val);
+                }, (val) => parseFloat(val).toFixed(2) + 's');
+
+                bindRange('decay', 'decay-val', (val) => {
+                        synthParams.decay = parseFloat(val);
+                }, (val) => parseFloat(val).toFixed(2) + 's');
+
+                bindRange('sustain', 'sustain-val', (val) => {
+                        synthParams.sustain = parseFloat(val);
+                }, (val) => parseFloat(val).toFixed(2));
+
+                bindRange('release-ctrl', 'release-val', (val) => {
+                        synthParams.release = parseFloat(val);
+                }, (val) => parseFloat(val).toFixed(2) + 's');
+
+                // LFO
+                bindRange('lfo-rate', 'lfo-rate-val', (val) => {
+                        synthParams.lfoRate = parseFloat(val);
+                        lfo.frequency.setValueAtTime(synthParams.lfoRate, audioCtx.currentTime);
+                }, (val) => parseFloat(val).toFixed(1) + ' Hz');
+
+                bindRange('lfo-depth', 'lfo-depth-val', (val) => {
+                        synthParams.lfoDepth = parseFloat(val);
+                }, (val) => parseFloat(val).toFixed(2));
+
+                // Volume
+                bindRange('volume', 'volume-val', (val) => {
+                        masterGain.gain.setValueAtTime(parseFloat(val), audioCtx.currentTime);
+                }, (val) => parseFloat(val).toFixed(2));
+
+                updateControlVisibility();
+
+                // Blur controls after interaction so keyboard notes work immediately
+                document.querySelectorAll('.controls input, .controls select').forEach(el => {
+                        el.addEventListener('change', () => el.blur());
+                });
+        }
+
+        function bindRange(inputId, displayId, onChange, formatDisplay) {
+                const input = document.getElementById(inputId);
+                const display = document.getElementById(displayId);
+                if (!input) return;
+                input.addEventListener('input', (e) => {
+                        onChange(e.target.value);
+                        if (display && formatDisplay) {
+                                display.textContent = formatDisplay(e.target.value);
+                        }
+                });
+        }
+
+        function bindSelect(selectId, onChange) {
+                const select = document.getElementById(selectId);
+                if (!select) return;
+                select.addEventListener('change', (e) => {
+                        onChange(e.target.value);
+                });
+        }
+
+        function updateControlVisibility() {
+                const addCtrl = document.getElementById('additive-controls');
+                const amCtrl = document.getElementById('am-controls');
+                const fmCtrl = document.getElementById('fm-controls');
+
+                if (addCtrl) addCtrl.style.display = synthParams.mode === 'additive' ? 'block' : 'none';
+                if (amCtrl) amCtrl.style.display = synthParams.mode === 'am' ? 'block' : 'none';
+                if (fmCtrl) fmCtrl.style.display = synthParams.mode === 'fm' ? 'block' : 'none';
+        }
+
+        setupControls();
 });

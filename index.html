@@ -10,44 +10,150 @@
       background: #0f1220;
       color: white;
       margin: 0;
-      height: 100vh;
+      min-height: 100vh;
       display: flex;
       align-items: center;
       justify-content: center;
-      overflow: hidden;
+      overflow-y: auto;
     }
 
     .app {
       position: relative;
       z-index: 2;
       background: rgba(255, 255, 255, 0.08);
-      padding: 20px 150px;
+      padding: 20px 30px;
       border-radius: 14px;
       box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
       text-align: center;
+      max-width: 900px;
+      margin: 20px;
     }
 
     h1 {
-      margin: 0 0 10px 0;
+      margin: 0 0 14px 0;
       font-weight: 600;
     }
 
-    button {
-      background: #6c7cff;
-      border: none;
-      color: white;
-      padding: 8px 14px;
-      border-radius: 8px;
-      font-size: 14px;
+    /* Controls Panel */
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-bottom: 16px;
+      justify-content: center;
+    }
+
+    .control-group {
+      background: rgba(255, 255, 255, 0.06);
+      border-radius: 10px;
+      padding: 12px 14px;
+      min-width: 145px;
+      text-align: left;
+      flex: 1;
+    }
+
+    .control-group h3 {
+      margin: 0 0 8px 0;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      opacity: 0.5;
+      font-weight: 500;
+    }
+
+    .mode-buttons {
+      display: flex;
+      gap: 4px;
+      margin-bottom: 10px;
+    }
+
+    .mode-btn {
+      flex: 1;
+      text-align: center;
+    }
+
+    .mode-btn input {
+      display: none;
+    }
+
+    .mode-btn span {
+      display: block;
+      padding: 5px 8px;
+      background: rgba(255, 255, 255, 0.08);
+      border-radius: 6px;
+      font-size: 12px;
       cursor: pointer;
+      transition: background 0.15s;
+    }
+
+    .mode-btn span:hover {
+      background: rgba(255, 255, 255, 0.15);
+    }
+
+    .mode-btn input:checked+span {
+      background: #6c7cff;
+      color: white;
+    }
+
+    .param {
       margin-bottom: 8px;
     }
 
-    #waveform-type {
-      margin: 6px 0 12px 0;
-      opacity: 0.9;
+    .param:last-child {
+      margin-bottom: 0;
     }
 
+    .param label {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 13px;
+      margin-bottom: 3px;
+    }
+
+    .val {
+      font-family: 'SF Mono', 'Menlo', monospace;
+      opacity: 0.6;
+      font-size: 11px;
+    }
+
+    .param input[type="range"] {
+      width: 100%;
+      height: 4px;
+      -webkit-appearance: none;
+      appearance: none;
+      background: rgba(255, 255, 255, 0.15);
+      border-radius: 2px;
+      outline: none;
+    }
+
+    .param input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 14px;
+      height: 14px;
+      background: #6c7cff;
+      border-radius: 50%;
+      cursor: pointer;
+    }
+
+    .param select {
+      width: 100%;
+      background: rgba(255, 255, 255, 0.1);
+      color: white;
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      border-radius: 4px;
+      padding: 4px 6px;
+      font-size: 13px;
+      outline: none;
+    }
+
+    .param select option {
+      background: #1a1d2e;
+      color: white;
+    }
+
+    /* Keyboard */
     .keyboard {
       position: relative;
       margin: 20px auto;
@@ -151,15 +257,110 @@
   <div class="viz" id="viz"></div>
 
   <div class="app">
-    <h1>🎹 Mini Web Synth</h1>
-    <div>
-      <label for="waveform-select">Waveform:</label>
-      <select id="waveform-select">
-        <option value="sine">Sine</option>
-        <option value="square">Square</option>
-        <option value="sawtooth">Sawtooth</option>
-        <option value="triangle">Triangle</option>
-      </select>
+    <h1>Mini Web Synth</h1>
+
+    <div class="controls">
+      <!-- Mode & Waveform -->
+      <div class="control-group">
+        <h3>Mode</h3>
+        <div class="mode-buttons">
+          <label class="mode-btn">
+            <input type="radio" name="synth-mode" value="additive" checked>
+            <span>Additive</span>
+          </label>
+          <label class="mode-btn">
+            <input type="radio" name="synth-mode" value="am">
+            <span>AM</span>
+          </label>
+          <label class="mode-btn">
+            <input type="radio" name="synth-mode" value="fm">
+            <span>FM</span>
+          </label>
+        </div>
+        <div class="param">
+          <label>Waveform</label>
+          <select id="waveform-select">
+            <option value="sine">Sine</option>
+            <option value="square">Square</option>
+            <option value="sawtooth">Sawtooth</option>
+            <option value="triangle">Triangle</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Synthesis Parameters (mode-dependent) -->
+      <div class="control-group" id="synth-params">
+        <h3>Synthesis</h3>
+        <div id="additive-controls">
+          <div class="param">
+            <label>Partials <span id="partials-val" class="val">5</span></label>
+            <input type="range" id="partials" min="3" max="16" value="5" step="1">
+          </div>
+        </div>
+        <div id="am-controls" style="display:none">
+          <div class="param">
+            <label>Mod Freq <span id="am-freq-val" class="val">100 Hz</span></label>
+            <input type="range" id="am-freq" min="1" max="1000" value="100" step="1">
+          </div>
+          <div class="param">
+            <label>Depth <span id="am-depth-val" class="val">0.50</span></label>
+            <input type="range" id="am-depth" min="0" max="1" step="0.01" value="0.5">
+          </div>
+        </div>
+        <div id="fm-controls" style="display:none">
+          <div class="param">
+            <label>Mod Freq <span id="fm-freq-val" class="val">200 Hz</span></label>
+            <input type="range" id="fm-freq" min="1" max="2000" value="200" step="1">
+          </div>
+          <div class="param">
+            <label>Mod Index <span id="fm-index-val" class="val">2.0</span></label>
+            <input type="range" id="fm-index" min="0" max="20" step="0.1" value="2">
+          </div>
+        </div>
+      </div>
+
+      <!-- ADSR Envelope -->
+      <div class="control-group">
+        <h3>Envelope</h3>
+        <div class="param">
+          <label>Attack <span id="attack-val" class="val">0.05s</span></label>
+          <input type="range" id="attack" min="0.01" max="2" step="0.01" value="0.05">
+        </div>
+        <div class="param">
+          <label>Decay <span id="decay-val" class="val">0.20s</span></label>
+          <input type="range" id="decay" min="0.01" max="2" step="0.01" value="0.2">
+        </div>
+        <div class="param">
+          <label>Sustain <span id="sustain-val" class="val">0.30</span></label>
+          <input type="range" id="sustain" min="0.01" max="1" step="0.01" value="0.3">
+        </div>
+        <div class="param">
+          <label>Release <span id="release-val" class="val">0.15s</span></label>
+          <input type="range" id="release-ctrl" min="0.01" max="3" step="0.01" value="0.15">
+        </div>
+      </div>
+
+      <!-- LFO -->
+      <div class="control-group">
+        <h3>LFO</h3>
+        <div class="param">
+          <label>Rate <span id="lfo-rate-val" class="val">5.0 Hz</span></label>
+          <input type="range" id="lfo-rate" min="0.1" max="20" step="0.1" value="5">
+        </div>
+        <div class="param">
+          <label>Depth <span id="lfo-depth-val" class="val">0.00</span></label>
+          <input type="range" id="lfo-depth" min="0" max="1" step="0.01" value="0">
+        </div>
+      </div>
+
+      <!-- Output -->
+      <div class="control-group">
+        <h3>Output</h3>
+        <div class="param">
+          <label>Volume <span id="volume-val" class="val">0.70</span></label>
+          <input type="range" id="volume" min="0" max="1" step="0.01" value="0.7">
+        </div>
+      </div>
     </div>
 
     <div class="keyboard" id="keyboard"></div>
